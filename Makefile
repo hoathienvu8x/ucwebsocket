@@ -1,27 +1,37 @@
-CC=gcc
-CFLAGS=-c -g -Wall -I ../lib
-LDFLAGS=
-SOURCES=server.c websocket.c wshandshake.c base64.c sha1.c
+CC = gcc
+LDFLAGS = -I. -ldl -lpthread -lm
+ifeq ($(build),release)
+	CFLAGS = -O3
+	LDFLAGS += -DNDEBUG=1
+else
+	CFLAGS = -Og -g
+endif
+CFLAGS += -std=gnu99 -Wall -Wextra -Werror -pedantic
+RM = rm -rf
 
+OBJECTS = base64.o sha1.o websocket.o wshandshake.o
+OBJECTS := $(addprefix objects/,$(OBJECTS))
+EXECUTABLE = wsocket
 
-OBJECTS=$(SOURCES:.c=.o)
-EXECUTABLE=wsocket
-OUTPUTFILE=libwsocket.a
+all: objects $(EXECUTABLE)
 
-all: $(SOURCES) $(EXECUTABLE)
+objects:
+	@echo "Create 'objects' folder ..."
+	@mkdir -p objects
 
-$(EXECUTABLE): $(OBJECTS)
-	$(CC) $(OBJECTS) $(LDFLAGS) -o $@
+$(EXECUTABLE): objects/server.o $(OBJECTS)
+ifeq ($(build),release)
+	@echo "Build release '$@' executable ..."
+else
+	@echo "Build '$@' executable ..."
+endif
+	@$(CC) objects/server.o $(OBJECTS) -o $@ $(LDFLAGS)
+	@$(RM) objects/server.o
 
-.c.o:
-	$(CC) $(CFLAGS) $< -o $@
-
-static: all
-	ar ru $(OUTPUTFILE) $(OBJECTS)
-	ranlib $(OUTPUTFILE)
+objects/%.o: %.c
+	@echo "Build '$@' object ..."
+	@$(CC) -c $(CFLAGS) $< -o $@ $(LDFLAGS)
 
 clean:
-	rm -f $(OBJECTS) $(EXECUTABLE) $(OUTPUTFILE)
-
-format:
-	astyle --style=stroustrup -s4 $(SOURCES)
+	@echo "Cleanup ..."
+	@$(RM) $(OBJECTS) $(EXECUTABLE)

@@ -50,7 +50,7 @@ int send_buff(int csocket, const uint8_t *buffer, size_t bufferSize)
         perror("send failed");
         return EXIT_FAILURE;
     }
-    if (written != bufferSize) {
+    if (written != (int)bufferSize) {
         close(csocket);
         perror("written not all bytes");
         return EXIT_FAILURE;
@@ -121,7 +121,7 @@ void client_handler(struct fds *client)
     }
     break;
 
-    case OPEN:
+    case OPEN: {
         ws_parse_frame(&client->fr, client->buffer, client->readedLength);
         printf("received fr.type 0x%X\n", client->fr.type);
         if (client->fr.type == WS_ERROR_FRAME)
@@ -156,14 +156,14 @@ void client_handler(struct fds *client)
         if(client->fr.type == WS_CLOSING_FRAME) {
             client->state = CLOSING;
         }
-        break;
+    } break;
 
-    case CLOSING:
+    case CLOSING: {
         printf("Close frame!\n");
         ws_create_closing_frame(client->buffer, &frameSize);
         send_buff(client->fd, client->buffer, frameSize);
         client->state = CLOSED;
-
+    } break;
     case CLOSED:
         printf("Frame closed\n");
         client_close(client);
@@ -176,7 +176,7 @@ void client_handler(struct fds *client)
 
 }
 
-int main(int argc, char *argv[])
+int main(int argc __attribute__((unused)), char *argv[] __attribute__((unused)))
 {
     int opt = TRUE;
     int master_socket, addrlen, new_socket, activity, i, sd;
