@@ -26,31 +26,35 @@
 #define TRUE   1
 #define FALSE  0
 #define PORT 8088
-#define BUF_LEN  512
+#ifndef BUF_LEN
+    #define BUF_LEN  512
+#endif
 
 #define MAX_FD	1024
 
 struct fds {
     int fd;
-    uint8_t buffer[BUF_LEN];
+    struct {
+        uint8_t data[BUF_LEN];
+        size_t pos;
+        size_t len;
+    } buffer;
     enum wsState state;
     struct ws_frame fr;
-    int readed;
-    int readedLength;
 };
 
 struct fds client_socket[MAX_FD];
 
 int send_buff(int csocket, const uint8_t *buffer, size_t bufferSize)
 {
-    int written = send(csocket,(char*)buffer, bufferSize, 0);
+    ssize_t written = ws_asserted_write(csocket,buffer, bufferSize);
 
     if (written == -1) {
         close(csocket);
         perror("send failed");
         return EXIT_FAILURE;
     }
-    if (written != (int)bufferSize) {
+    if (written != (ssize_t)bufferSize) {
         close(csocket);
         perror("written not all bytes");
         return EXIT_FAILURE;
@@ -72,62 +76,59 @@ void client_close(struct fds * client)
     close(client->fd);
     client->fd = 0;
     client->state = CONNECTING;
-    memset(client->buffer,0,BUF_LEN);
-    client->readedLength = 0;
+    memset(&client->buffer,0,sizeof(client->buffer));
 }
 
 void client_handler(struct fds *client)
 {
     int frameSize = BUF_LEN;
+    uint8_t buffer[BUF_LEN] = {0};
 
-    if(!client->readedLength) {
-        client->readedLength = recv(client->fd, (char*)client->buffer, BUF_LEN, 0);
-    }
-
-    if (!client->readedLength) {
-        client_close(client);
-        perror("recv failed");
-        return;
-    }
-
-    assert(client->readedLength <= BUF_LEN);
 
     switch(client->state) {
     case CONNECTING: {
 
         struct http_header hdr;
-        ws_handshake(&hdr, client->buffer, client->readedLength,  &frameSize);
+        int recv_len = 0;
+        ssize_t len = 0;
+
+        do {
+            len = ws_asserted_read((struct ws_ctx *)client, buffer + recv_len, 1);
+            if (len <= 0) return;
+            recv_len += len;
+            if (recv_len > BUF_LEN) return;
+        } while (strstr((char *)buffer, "\r\n\r\n") == NULL);
+
+        ws_handshake(&hdr, buffer, recv_len,  &frameSize);
 
         if (hdr.type != WS_OPENING_FRAME) {
-            send_buff(client->fd, client->buffer, frameSize);
+            send_buff(client->fd, buffer, frameSize);
             client_close(client);
 
             return;
         } else {
 
             if (strcmp(hdr.uri, "/echo") != 0) {
-                frameSize = sprintf((char *)client->buffer, "HTTP/1.1 404 Not Found\r\n\r\n");
-                send_buff(client->fd, client->buffer, frameSize);
+                frameSize = sprintf((char *)buffer, "HTTP/1.1 404 Not Found\r\n\r\n");
+                send_buff(client->fd, buffer, frameSize);
                 client->state = CLOSING;
                 break;
             }
 
-            if (send_buff(client->fd, client->buffer, frameSize) == EXIT_FAILURE) {
+            if (send_buff(client->fd, buffer, frameSize) == EXIT_FAILURE) {
                 return;
             }
             client->state = OPEN;
-            client->readedLength = 0;
         }
     }
     break;
 
     case OPEN: {
-        ws_parse_frame(&client->fr, client->buffer, client->readedLength);
+        ws_parse_frame(&client->fr, (struct ws_ctx *)client);
         printf("received fr.type 0x%X\n", client->fr.type);
         if (client->fr.type == WS_ERROR_FRAME)
         {
           printf("Error or reserved frame received...");
-          client->readedLength = 0;
         }
         if (client->fr.type == WS_TEXT_FRAME) {
             client->fr.payload[client->fr.payload_length] = 0;
@@ -135,12 +136,11 @@ void client_handler(struct fds *client)
             printf("Payload '%s'\n", client->fr.payload);
             printf("make frame '%s' len %lu \n", client->fr.payload, client->fr.payload_length);
 
-            ws_create_text_frame((char*)client->fr.payload, client->buffer, &frameSize);
-            if (send_buff(client->fd, client->buffer, frameSize) == EXIT_FAILURE) {
+            ws_create_text_frame((char*)client->fr.payload, buffer, &frameSize);
+            if (send_buff(client->fd, buffer, frameSize) == EXIT_FAILURE) {
                 perror("send");
                 exit(-1);
             }
-            client->readedLength = 0;
         }
 
         if (client->fr.type == WS_BINARY_FRAME) {
@@ -150,7 +150,6 @@ void client_handler(struct fds *client)
             }
             printf("\n");
 
-            client->readedLength = 0;
         }
 
         if(client->fr.type == WS_CLOSING_FRAME) {
@@ -160,8 +159,8 @@ void client_handler(struct fds *client)
 
     case CLOSING: {
         printf("Close frame!\n");
-        ws_create_closing_frame(client->buffer, &frameSize);
-        send_buff(client->fd, client->buffer, frameSize);
+        ws_create_closing_frame(buffer, &frameSize);
+        send_buff(client->fd, buffer, frameSize);
         client->state = CLOSED;
     } break;
     case CLOSED:
@@ -197,6 +196,7 @@ int main(int argc __attribute__((unused)), char *argv[] __attribute__((unused)))
     for (i = 0; i < MAX_FD; i++) {
         client_socket[i].fd = 0;
         client_socket[i].state = CONNECTING;
+        memset(&client_socket[i].buffer, 0, sizeof(client_socket[i].buffer));
     }
 
     //create a master socket

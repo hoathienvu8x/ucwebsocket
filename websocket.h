@@ -19,6 +19,9 @@ extern "C" {
 #include "base64.h"
 #include "sha1.h"
 
+#ifndef BUF_LEN
+    #define BUF_LEN 512
+#endif
 
 #define WS_VERSION 13
 #define WS_WEBSOCK "websocket"
@@ -54,7 +57,18 @@ struct ws_frame {
     enum wsFrameType type;
 };
 
-void ws_parse_frame(struct ws_frame *frame, uint8_t *data, int len);
+struct ws_ctx {
+    int fd;
+    struct {
+        uint8_t data[BUF_LEN];
+        size_t pos;
+        size_t len;
+    } buf;
+};
+
+ssize_t ws_asserted_read(struct ws_ctx *ctx, void *buf, size_t len);
+ssize_t ws_asserted_write(int fd, const void *buf, size_t len);
+void ws_parse_frame(struct ws_frame *frame, struct ws_ctx *ctx);
 void ws_create_frame(struct ws_frame *frame, uint8_t *out_data, int *out_len);
 void ws_create_closing_frame(uint8_t *out_data, int *out_len);
 void ws_create_text_frame(const char *text, uint8_t *out_data, int *out_len);

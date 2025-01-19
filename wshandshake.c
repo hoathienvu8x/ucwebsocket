@@ -18,6 +18,9 @@
 #ifdef _WIN32
 #define snprintf(buf,len, format,...) _snprintf_s(buf, len,len, format, __VA_ARGS__)
 #define strdup _strdup
+#define strcasecmp _stricmp
+#else
+#define strcasecmp _strcasecmp
 #endif
 
 static int http_header_readline(char *in, char *buf, int len)
@@ -44,7 +47,20 @@ static int http_header_readline(char *in, char *buf, int len)
     }
     return 0;
 }
-
+#ifndef _WIN32
+static int _strcasecmp(const char *s1, const char *s2)
+{
+    register unsigned char c1, c2;
+    register unsigned char flipbit = ~(1 << 5);
+    do
+    {
+        c1 = (unsigned char)*s1++ & flipbit;
+        c2 = (unsigned char)*s2++ & flipbit;
+        if (c1 == '\0') return c1 - c2;
+    } while (c1 == c2);
+    return c1 - c2;
+}
+#endif
 static int http_parse_headers(struct http_header *header, const char *hdr_line)
 {
     char *p;
@@ -60,15 +76,15 @@ static int http_parse_headers(struct http_header *header, const char *hdr_line)
         header_content++;
     } while (*header_content == ' ');
 
-    if (!strcmp(WS_HDR_UPG, header_name)) {
+    if (!strcasecmp(WS_HDR_UPG, header_name)) {
         header->upgrade = !strcmp(WS_WEBSOCK, header_content);
     }
 
-    if (!strcmp(WS_HDR_VER, header_name)) {
+    if (!strcasecmp(WS_HDR_VER, header_name)) {
         header->version = atoi(header_content);
     }
 
-    if (!strcmp(WS_HDR_KEY, header_name)) {
+    if (!strcasecmp(WS_HDR_KEY, header_name)) {
 
         memcpy(&header->key, header_content, sizeof(header->key));
     }
