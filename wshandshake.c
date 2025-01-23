@@ -20,6 +20,21 @@
 #define strdup _strdup
 #endif
 
+static int _strcasecmp(const char *s1, const char *s2)
+{
+    register unsigned char c1, c2;
+    register unsigned char flipbit = ~(1 << 5);
+    do
+    {
+        c1 = (unsigned char)*s1++ & flipbit;
+        c2 = (unsigned char)*s2++ & flipbit;
+        if (c1 == '\0') return c1 - c2;
+    } while (c1 == c2);
+    return c1 - c2;
+}
+
+
+
 static int http_header_readline(char *in, char *buf, int len)
 {
     char *ptr = buf;
@@ -60,15 +75,15 @@ static int http_parse_headers(struct http_header *header, const char *hdr_line)
         header_content++;
     } while (*header_content == ' ');
 
-    if (!strcmp(WS_HDR_UPG, header_name)) {
+    if (!_strcasecmp(WS_HDR_UPG, header_name)) {
         header->upgrade = !strcmp(WS_WEBSOCK, header_content);
     }
 
-    if (!strcmp(WS_HDR_VER, header_name)) {
+    if (!_strcasecmp(WS_HDR_VER, header_name)) {
         header->version = atoi(header_content);
     }
 
-    if (!strcmp(WS_HDR_KEY, header_name)) {
+    if (!_strcasecmp(WS_HDR_KEY, header_name)) {
 
         memcpy(&header->key, header_content, sizeof(header->key));
     }
